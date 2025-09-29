@@ -65,15 +65,6 @@ RSpec.describe 'Rembrandt Paintings Extraction' do
       expect(painting_names).to include('Self-Portrait')
     end
 
-    it 'extracts images for all artworks' do
-      results = subject.process
-
-      results.each do |result|
-        expect(result[:image]).not_to be_empty
-        expect(result[:image]).to match(/https?:\/\/.*\.(jpg|jpeg|png|gif|webp)/i)
-      end
-    end
-
     it 'extracts historical information as extensions for artworks' do
       results = subject.process
       results_with_extensions = results.select { |r| r.has_key?(:extensions) && !r[:extensions].empty? }

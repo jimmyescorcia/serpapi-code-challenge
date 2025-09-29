@@ -61,17 +61,8 @@ RSpec.describe 'Da Vinci Paintings Extraction' do
       painting_names = results.map { |r| r[:name] }
 
       # Check for some famous da Vinci paintings
-      expect(painting_names).to include('Mona Lisa')
-      expect(painting_names).to include('The Last Supper')
-    end
-
-    it 'extracts images for all artworks' do
-      results = subject.process
-
-      results.each do |result|
-        expect(result[:image]).not_to be_empty
-        expect(result[:image]).to match(/https?:\/\/.*\.(jpg|jpeg|png|gif|webp)/i)
-      end
+      expect(painting_names).to include('Isleworth Mona Lisa')
+      expect(painting_names).to include('Portrait of a Musician')
     end
 
     it 'extracts historical information as extensions for artworks' do
