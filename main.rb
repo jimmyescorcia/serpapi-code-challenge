@@ -132,33 +132,67 @@ class GoogleSearchExtractor
     options.add_argument('--height=1080')
     options
   end
+
+  def validate_search_url(href)
+    # Must start with /search
+    return false unless href.start_with?('/search')
+
+    # Extract query string
+    parts = href.split('?', 2)
+    return false if parts.length < 2
+
+    query_string = parts[1]
+
+    # Parse query parameters
+    params = {}
+    query_string.split('&').each do |param|
+      key, value = param.split('=', 2)
+      params[key] = value if key
+    end
+
+    # Must contain sca_esv parameter with a non-empty value
+    sca_esv = params['sca_esv']
+    return false unless sca_esv && !sca_esv.empty?
+
+    true
+  end
   
   def extract_search_results(doc)
     puts "\nExtracting search results..." if @options[:verbose]
-    
+
     # Find the main role element
     main_element = doc.at_css('[role="main"]')
-    
+
     unless main_element
       puts "No element with role='main' found in the document" if @options[:verbose]
       puts "Searching in entire document instead..." if @options[:verbose]
       main_element = doc
     end
-    
-    # Find all anchor tags with href starting with "search?sca_esv="
-    # Note: Using XPath for starts-with since CSS doesn't support it well
-    anchors = main_element.xpath('.//a[starts-with(@href, "/search?sca_esv=")]')
-    
+
+    # Find all anchor tags that start with /search and validate sca_esv parameter
+    anchors = main_element.xpath('.//a[starts-with(@href, "/search")]')
+
     # Alternative CSS approach if XPath doesn't work
     if anchors.empty?
-      anchors = main_element.css('a[href^="/search?sca_esv="]')
+      anchors = main_element.css('a[href^="/search"]')
     end
-    
-    puts "Found #{anchors.length} matching anchor tags" if @options[:verbose]
-    
+
+    # Filter anchors to only include those with sca_esv query parameter
+    valid_anchors = anchors.select do |anchor|
+      href = anchor['href']
+      next false unless href
+
+      # Parse the URL to check for sca_esv parameter
+      valid = validate_search_url(href)
+      puts "    Checking anchor with href='#{href}': #{valid ? 'valid' : 'invalid'}" if @options[:verbose]
+      valid
+    end
+
+    puts "Found #{valid_anchors.length} valid anchor tags (out of #{anchors.length} /search links)" if @options[:verbose]
+
     @results = []
-    
-    anchors.each_with_index do |anchor, index|
+
+    valid_anchors.each_with_index do |anchor, index|
       begin
         entity = extract_entity_from_anchor(anchor)
         if entity
@@ -169,7 +203,7 @@ class GoogleSearchExtractor
         puts "  ✗ Error extracting entity ##{index + 1}: #{e.message}" if @options[:verbose]
       end
     end
-    
+
     puts "Successfully extracted #{@results.length} entities" if @options[:verbose]
     @results
   end
@@ -369,12 +403,13 @@ class GoogleSearchExtractorCLI
         puts "\n#{i + 1}. #{result[:name] || '(no name)'}"
         puts "   Link: #{result[:link][0..60]}..."
         puts "   Image: #{result[:image].empty? ? '(no image)' : 'Present'}"
-        puts "   Extensions: #{result[:extensions].empty? ? '(none)' : result[:extensions].join(', ')}"
+        extensions = result[:extensions] || []
+        puts "   Extensions: #{extensions.empty? ? '(none)' : extensions.join(', ')}"
       end
-      
+
       # Statistics
       with_images = results.count { |r| !r[:image].empty? }
-      with_extensions = results.count { |r| !r[:extensions].empty? }
+      with_extensions = results.count { |r| (r[:extensions] || []).any? }
       
       puts "\nStatistics:"
       puts "  - Results with images: #{with_images}/#{results.length}"
@@ -387,133 +422,7 @@ class GoogleSearchExtractorCLI
   end
 end
 
-# Create sample HTML file for testing
-def create_sample_google_html
-  html = <<-HTML
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Sample Google Search Results</title>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        [role="main"] { padding: 20px; background: #f9f9f9; }
-        a { text-decoration: none; display: block; margin: 10px 0; padding: 10px; border: 1px solid #ddd; }
-        img { width: 50px; height: 50px; }
-    </style>
-</head>
-<body>
-    <div role="main">
-        <h1>Search Results</h1>
-        
-        <!-- Valid Result 1: has img and div -->
-        <a href="search?sca_esv=123456&q=example1">
-            <img data-src="https://example.com/image1.jpg" alt="Image 1">
-            <div>
-                <div>Example Product 1</div>
-                <div>["Electronics", "Gadgets"]</div>
-            </div>
-        </a>
-        
-        <!-- Valid Result 2: has img and div -->
-        <a href="search?sca_esv=789012&q=example2">
-            <img src="https://example.com/image2.jpg" alt="Image 2">
-            <div>
-                <div>Example Service 2</div>
-                <div>Professional</div>
-            </div>
-        </a>
-        
-        <!-- Valid Result 3: has img and div (no extensions) -->
-        <a href="search?sca_esv=345678&q=example3">
-            <img data-src="https://example.com/image3.jpg" alt="Image 3">
-            <div>
-                <div>Example Item 3</div>
-            </div>
-        </a>
-        
-        <!-- INVALID: Only has div, missing img - should be skipped -->
-        <a href="search?sca_esv=999999&q=invalid1">
-            <div>
-                <div>Invalid Item - No Image</div>
-            </div>
-        </a>
-        
-        <!-- INVALID: Has img, span, and div (3 children) - should be skipped -->
-        <a href="search?sca_esv=888888&q=invalid2">
-            <img src="https://example.com/image.jpg" alt="Image">
-            <span>Extra element</span>
-            <div>
-                <div>Invalid Item - Too Many Children</div>
-            </div>
-        </a>
-        
-        <!-- INVALID: Only has img, missing div - should be skipped -->
-        <a href="search?sca_esv=777777&q=invalid3">
-            <img src="https://example.com/image.jpg" alt="Image">
-        </a>
-        
-        <!-- This should be ignored (different href pattern) -->
-        <a href="/different/path">
-            <div>Not a search result</div>
-        </a>
-    </div>
-    
-    <script>
-        // Simulate dynamic content loading
-        setTimeout(function() {
-            console.log('Page fully loaded');
-            document.body.style.backgroundColor = '#fff';
-        }, 1000);
-    </script>
-</body>
-</html>
-  HTML
-  
-  filename = 'sample_google_search.html'
-  File.write(filename, html)
-  puts "Created sample file: #{filename}"
-  filename
-end
-
 # Main execution
 if __FILE__ == $0
-  if ARGV.empty? || ARGV[0] == '--demo'
-    puts "="*60
-    puts "Google Search Results Extractor"
-    puts "="*60
-    
-    if ARGV[0] == '--demo'
-      puts "\nRunning demo..."
-      demo_file = create_sample_google_html
-      
-      extractor = GoogleSearchExtractor.new(demo_file, {
-        verbose: true,
-        wait_time: 3
-      })
-      
-      results = extractor.process
-      
-      puts "\n" + "="*60
-      puts "EXTRACTED RESULTS (JSON):"
-      puts "="*60
-      
-      # Wrap in artworks object and pretty print
-      wrapped_results = { "artworks" => results }
-      puts JSON.pretty_generate(wrapped_results)
-      
-      puts "\nDemo file created: #{demo_file}"
-      puts "You can now run: ruby #{$0} #{demo_file}"
-    else
-      puts "\nThis script extracts search results from Google HTML files."
-      puts "\nUsage: ruby #{$0} [options] FILE.html"
-      puts "\nOptions:"
-      puts "  -o FILE     Output to JSON file"
-      puts "  -v          Verbose output"
-      puts "  -s          Show summary"
-      puts "  -h          Show full help"
-      puts "\nRun with --demo to see a working example"
-    end
-  else
-    GoogleSearchExtractorCLI.run
-  end
+  GoogleSearchExtractorCLI.run
 end
