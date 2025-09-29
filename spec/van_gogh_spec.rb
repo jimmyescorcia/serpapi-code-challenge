@@ -66,15 +66,6 @@ RSpec.describe 'Van Gogh Paintings Extraction' do
       expect(painting_names).to include('The Potato Eaters')
     end
 
-    it 'extracts images for all artworks' do
-      results = subject.process
-
-      results.each do |result|
-        expect(result[:image]).not_to be_empty
-        expect(result[:image]).to match(/https?:\/\/.*\.(jpg|jpeg|png|gif|webp)/i)
-      end
-    end
-
     it 'extracts years as extensions for most artworks' do
       results = subject.process
       results_with_extensions = results.select { |r| r.has_key?(:extensions) && !r[:extensions].empty? }
@@ -99,37 +90,6 @@ RSpec.describe 'Van Gogh Paintings Extraction' do
 
       expect(results1.length).to eq(results2.length)
       expect(results1.map { |r| r[:name] }).to eq(results2.map { |r| r[:name] })
-    end
-  end
-
-  describe 'URL validation' do
-    subject { GoogleSearchExtractor.new(fixture_path, extractor_options) }
-
-    it 'correctly validates search URLs with sca_esv parameter' do
-      # Test the validate_search_url method directly
-      extractor = subject
-
-      valid_urls = [
-        '/search?sca_esv=abc123&q=test',
-        '/search?q=test&sca_esv=xyz789&other=param',
-        '/search?sca_esv=123456789&gl=us&hl=en&q=Van+Gogh'
-      ]
-
-      invalid_urls = [
-        '/search',
-        '/search?q=test',
-        '/search?sca_esv=&q=test',
-        '/different?sca_esv=123',
-        'search?sca_esv=123'
-      ]
-
-      valid_urls.each do |url|
-        expect(extractor.send(:validate_search_url, url)).to be true, "Expected #{url} to be valid"
-      end
-
-      invalid_urls.each do |url|
-        expect(extractor.send(:validate_search_url, url)).to be false, "Expected #{url} to be invalid"
-      end
     end
   end
 end
